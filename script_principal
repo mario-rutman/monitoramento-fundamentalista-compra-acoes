@@ -1,0 +1,92 @@
+import yfinance as yf
+import pandas as pd
+from datetime import datetime, timedelta
+from ipywidgets import widgets
+from IPython.display import display, clear_output
+
+# Lista pré-definida de ações (SEMPRE entre aspas para o script rodar sem erros) e período .
+
+ACOES_PREDEFINIDAS = [
+    ('BRAP3','Bradespar'), ('B3SA3','Brasil Bolsa Balcão'), ('BBAS3','Banco do Brasil'),
+     ('BBDC3','Bradesco'), ('BBSE3','BB Seguridade'), ('BRAP3','Bradespar'),
+     ('CMIG3','CMIG'), ('CPFE3','CPFL Energia'), ('CPLE3','Copel'),
+     ('CXSE3','Caixa Seguridade'), ('EGIE3','Engie Brasil'), ('GRND3','Grendene'),
+     ('ITSA3','Itausa'), ('ITUB3','Itaú Unibanco'), ('PETR3','Petrobras'),
+     ('PSSA3','Porto'), ('SANB3','Santander'), ('SAPR3','SANEPAR'),
+     ('CMIN3','CSN Mineração'), ('TAEE11','Taesa'), ('VIVT3','Telefônica Brasil'),
+     ('KLBN3','Klabin'), ('VALE3','Vale'), ('WEGE3','WEG'),
+     ('TRPL3','ISA CTEEP'), ('UNIP3','Unipar Carbocloro'), ('ALUP3', 'Alupar'),
+    ('RANI3', 'Irani')
+     ]
+
+PERIODO_ANOS = 5
+
+# Função para obter dados e centis
+def obter_dados_e_centis(acoes, periodo):
+    hoje = datetime.now()
+    inicio = hoje - timedelta(days=periodo*365)
+
+    dados = {}
+    for ticker, nome in acoes:
+        acao = yf.Ticker(f"{ticker}.SA")
+        historico = acao.history(start=inicio, end=hoje)
+        if not historico.empty:
+            precos = historico['Close']
+            ultimo_preco = precos.iloc[-1]
+            centil = (precos <= ultimo_preco).mean() * 100
+            dados[ticker] = {
+                'Nome': nome,
+                'Último Preço': round(ultimo_preco, 2),
+                'Centil': int(round(centil, 0))
+            }
+
+    df = pd.DataFrame(dados).T
+    df = df.sort_values('Centil')
+    df['Resumo'] = df.apply(lambda row: f"Nos últimos {periodo} anos, {100-row['Centil']}% das cotações de fechamento da {row.name} ficaram acima da cotação atual (R${row['Último Preço']:.2f}).", axis=1)
+    return df
+
+def calcular_custo_total(selecoes, df):
+    custo_total = 0
+    acoes_compradas = {}
+    total_acoes = 0
+    for ticker, quantidade in selecoes.items():
+        if quantidade > 0:
+            preco = df.loc[ticker, 'Último Preço']
+            custo = preco * quantidade
+            custo_total += custo
+            acoes_compradas[ticker] = quantidade
+            total_acoes += quantidade
+    return custo_total, acoes_compradas, total_acoes
+
+# Obter dados e centis para as ações pré-definidas
+df = obter_dados_e_centis(ACOES_PREDEFINIDAS, PERIODO_ANOS)
+
+# Criar widgets para seleção de quantidades
+quantidade_widgets = {ticker: widgets.IntText(value=0, description=f"{ticker}", min=0, layout=widgets.Layout(width='auto')) for ticker in df.index}
+calcular_button = widgets.Button(description='Calcular Compra')
+output = widgets.Output()
+
+def on_calcular_button_clicked(b):
+    with output:
+        clear_output()
+        selecoes = {ticker: widget.value for ticker, widget in quantidade_widgets.items()}
+        custo_total, acoes_compradas, total_acoes = calcular_custo_total(selecoes, df)
+        print('Resumo da compra:')
+        for ticker, quantidade in acoes_compradas.items():
+            print(f"{ticker} ({df.loc[ticker, 'Nome']}): {quantidade} ações")
+        print(f'Total de ações: {total_acoes}')
+        print(f'Custo total: R$ {custo_total:.2f}')
+
+calcular_button.on_click(on_calcular_button_clicked)
+
+# Exibir a tabela de ações e centis
+# display(df)
+pd.set_option('display.max_colwidth', None)
+print(df.to_string())
+
+# Organizar os widgets em 10 colunas
+widgets_list = list(quantidade_widgets.values())
+widget_grid = widgets.GridBox(widgets_list, layout=widgets.Layout(grid_template_columns="repeat(5, 1fr)"))
+
+# Exibir os widgets para seleção de quantidades e o botão de cálculo
+display(widgets.VBox([widget_grid, calcular_button, output]))
